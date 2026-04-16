@@ -24,25 +24,41 @@ export default function ProjectsPage() {
   const [selected, setSelected] = useState<typeof EMPTY & { id?: string }>(EMPTY);
 
   const load = useCallback(async () => {
-    const params = new URLSearchParams({ page: String(page), limit: '10' });
-    if (search) params.set('search', search);
-    const data = await api<{ projects: Project[] }>(`/projects?${params}`);
-    setProjects(data.projects);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: '10' });
+      if (search) params.set('search', search);
+      const data = await api<{ projects: Project[] }>(`/projects?${params}`);
+      setProjects(data.projects);
+    } catch (err) {
+      console.error(err);
+    }
   }, [page, search]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api<Team[]>('/teams').then(setTeams); }, []);
+  useEffect(() => {
+    api<Team[]>('/teams').then(setTeams).catch(console.error);
+  }, []);
+
+  const [error, setError] = useState('');
 
   const save = async () => {
-    if (modal === 'create') await api('/projects', { method: 'POST', body: JSON.stringify(selected) });
-    else await api(`/projects/${selected.id}`, { method: 'PUT', body: JSON.stringify(selected) });
-    setModal(null); setSelected(EMPTY); load();
+    try {
+      if (modal === 'create') await api('/projects', { method: 'POST', body: JSON.stringify(selected) });
+      else await api(`/projects/${selected.id}`, { method: 'PUT', body: JSON.stringify(selected) });
+      setModal(null); setSelected(EMPTY); load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    }
   };
 
   const remove = async (id: string) => {
     if (!confirm('Delete this project?')) return;
-    await api(`/projects/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      await api(`/projects/${id}`, { method: 'DELETE' });
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
+    }
   };
 
   const toggleTeam = (id: string) =>
@@ -84,8 +100,9 @@ export default function ProjectsPage() {
       </div>
 
       {modal && (
-        <Modal title={modal === 'create' ? 'New Project' : 'Edit Project'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'create' ? 'New Project' : 'Edit Project'} onClose={() => { setModal(null); setError(''); }}>
           <div className="space-y-3">
+            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
             <Input label="Project Name" value={selected.name} onChange={e => setSelected(p => ({ ...p, name: e.target.value }))} required />
             <div className="flex flex-col gap-1">
               <label className="text-sm font-medium text-gray-700">Description</label>
@@ -107,7 +124,7 @@ export default function ProjectsPage() {
               </div>
             </div>
             <div className="flex gap-2 justify-end pt-2">
-              <Button variant="secondary" onClick={() => setModal(null)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => { setModal(null); setError(''); }}>Cancel</Button>
               <Button onClick={save}>Save</Button>
             </div>
           </div>

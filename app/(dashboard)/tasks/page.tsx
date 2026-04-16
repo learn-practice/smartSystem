@@ -28,33 +28,47 @@ export default function TasksPage() {
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
 
   const load = useCallback(async () => {
-    const params = new URLSearchParams({ page: String(page), limit: '10' });
-    if (search) params.set('search', search);
-    if (statusFilter) params.set('status', statusFilter);
-    if (priorityFilter) params.set('priority', priorityFilter);
-    const data = await api<{ tasks: Task[]; total: number }>(`/tasks?${params}`);
-    setTasks(data.tasks);
-    setTotal(data.total);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: '10' });
+      if (search) params.set('search', search);
+      if (statusFilter) params.set('status', statusFilter);
+      if (priorityFilter) params.set('priority', priorityFilter);
+      const data = await api<{ tasks: Task[]; total: number }>(`/tasks?${params}`);
+      setTasks(data.tasks);
+      setTotal(data.total);
+    } catch (err) {
+      console.error(err);
+    }
   }, [page, search, statusFilter, priorityFilter]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
+    api<{ projects: { id: string; name: string }[] }>('/projects').then(d => setProjects(d.projects)).catch(console.error);
     if (user?.role !== 'user') {
-      api<{ id: string; name: string }[]>('/users').then(setUsers);
-      api<{ projects: { id: string; name: string }[] }>('/projects').then(d => setProjects(d.projects));
+      api<{ id: string; name: string }[]>('/users').then(setUsers).catch(console.error);
     }
   }, [user]);
 
+  const [error, setError] = useState('');
+
   const save = async () => {
-    if (modal === 'create') await api('/tasks', { method: 'POST', body: JSON.stringify(selected) });
-    else await api(`/tasks/${selected.id}`, { method: 'PUT', body: JSON.stringify(selected) });
-    setModal(null); setSelected(EMPTY); load();
+    try {
+      if (modal === 'create') await api('/tasks', { method: 'POST', body: JSON.stringify(selected) });
+      else await api(`/tasks/${selected.id}`, { method: 'PUT', body: JSON.stringify(selected) });
+      setModal(null); setSelected(EMPTY); load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    }
   };
 
   const remove = async (id: string) => {
     if (!confirm('Delete this task?')) return;
-    await api(`/tasks/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      await api(`/tasks/${id}`, { method: 'DELETE' });
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
+    }
   };
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -64,6 +78,7 @@ export default function TasksPage() {
 
   const columns = [
     { key: 'title', header: 'Title' },
+    { key: 'project_name', header: 'Project', render: (t: Task) => <span>{t.project_name || '—'}</span> },
     { key: 'priority', header: 'Priority', render: (t: Task) => <Badge value={t.priority} /> },
     { key: 'status', header: 'Status', render: (t: Task) => <Badge value={t.status} /> },
     { key: 'assigned_to_name', header: 'Assigned To', render: (t: Task) => <span>{t.assigned_to_name || '—'}</span> },
@@ -97,29 +112,55 @@ export default function TasksPage() {
       </div>
 
       {modal && (
-        <Modal title={modal === 'create' ? 'New Task' : 'Edit Task'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'create' ? 'New Task' : 'Edit Task'} onClose={() => { setModal(null); setError(''); }}>
           <div className="space-y-3">
-            <Input label="Title" value={selected.title || ''} onChange={set('title')} required />
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">Description</label>
-              <textarea className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border-gray-300"
-                rows={3} value={selected.description || ''} onChange={set('description')} />
-            </div>
-            <Select label="Priority" value={selected.priority || 'medium'} onChange={set('priority')}
-              options={[{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} />
-            <Select label="Status" value={selected.status || 'pending'} onChange={set('status')}
-              options={[{ value: 'pending', label: 'Pending' }, { value: 'in_progress', label: 'In Progress' }, { value: 'completed', label: 'Completed' }]} />
-            <Input label="Deadline" type="date" value={selected.deadline?.split('T')[0] || ''} onChange={set('deadline')} />
-            {canEdit && (
+            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+            {canEdit ? (
               <>
+                <Input label="Title" value={selected.title || ''} onChange={set('title')} required />
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-gray-700">Description</label>
+                  <textarea className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 border-gray-300"
+                    rows={3} value={selected.description || ''} onChange={set('description')} />
+                </div>
+                <Select label="Priority" value={selected.priority || 'medium'} onChange={set('priority')}
+                  options={[{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} />
+                <Select label="Status" value={selected.status || 'pending'} onChange={set('status')}
+                  options={[{ value: 'pending', label: 'Pending' }, { value: 'in_progress', label: 'In Progress' }, { value: 'completed', label: 'Completed' }]} />
+                <Input label="Deadline" type="date" value={selected.deadline?.split('T')[0] || ''} onChange={set('deadline')} />
                 <Select label="Assign To" value={selected.assigned_to || ''} onChange={set('assigned_to')}
                   options={users.map(u => ({ value: u.id, label: u.name }))} />
                 <Select label="Project" value={selected.project_id || ''} onChange={set('project_id')}
                   options={projects.map(p => ({ value: p.id, label: p.name }))} />
               </>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-gray-700">Title</p>
+                  <p className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-lg">{selected.title}</p>
+                </div>
+                {selected.project_name && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-gray-700">Project</p>
+                    <p className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-lg">{selected.project_name}</p>
+                  </div>
+                )}
+                <div className="flex gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-gray-700">Priority</p>
+                    <Badge value={selected.priority || ''} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-gray-700">Deadline</p>
+                    <p className="text-sm text-gray-600">{selected.deadline ? new Date(selected.deadline).toLocaleDateString() : '—'}</p>
+                  </div>
+                </div>
+                <Select label="Status" value={selected.status || 'pending'} onChange={set('status')}
+                  options={[{ value: 'pending', label: 'Pending' }, { value: 'in_progress', label: 'In Progress' }, { value: 'completed', label: 'Completed' }]} />
+              </>
             )}
             <div className="flex gap-2 justify-end pt-2">
-              <Button variant="secondary" onClick={() => setModal(null)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => { setModal(null); setError(''); }}>Cancel</Button>
               <Button onClick={save}>Save</Button>
             </div>
           </div>

@@ -19,22 +19,36 @@ export default function EmployeesPage() {
   const [selected, setSelected] = useState<typeof EMPTY & { id?: string }>(EMPTY);
 
   const load = useCallback(async () => {
-    const data = await api<User[]>('/users');
-    setUsers(data);
+    try {
+      const data = await api<User[]>('/users');
+      setUsers(data);
+    } catch (err) {
+      console.error(err);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
+  const [error, setError] = useState('');
+
   const save = async () => {
-    if (modal === 'create') await api('/users', { method: 'POST', body: JSON.stringify(selected) });
-    else await api(`/users/${selected.id}`, { method: 'PUT', body: JSON.stringify(selected) });
-    setModal(null); setSelected(EMPTY); load();
+    try {
+      if (modal === 'create') await api('/users', { method: 'POST', body: JSON.stringify(selected) });
+      else await api(`/users/${selected.id}`, { method: 'PUT', body: JSON.stringify(selected) });
+      setModal(null); setSelected(EMPTY); load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    }
   };
 
   const remove = async (id: string) => {
     if (!confirm('Delete this employee?')) return;
-    await api(`/users/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      await api(`/users/${id}`, { method: 'DELETE' });
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
+    }
   };
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -75,15 +89,16 @@ export default function EmployeesPage() {
       </div>
 
       {modal && (
-        <Modal title={modal === 'create' ? 'Add Employee' : 'Edit Employee'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'create' ? 'Add Employee' : 'Edit Employee'} onClose={() => { setModal(null); setError(''); }}>
           <div className="space-y-3">
+            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
             <Input label="Full Name" value={selected.name} onChange={set('name')} required />
             <Input label="Email" type="email" value={selected.email} onChange={set('email')} required />
             {modal === 'create' && <Input label="Password" type="password" value={selected.password} onChange={set('password')} required />}
             <Select label="Role" value={selected.role} onChange={set('role')}
               options={[{ value: 'user', label: 'User' }, { value: 'manager', label: 'Manager' }, { value: 'admin', label: 'Admin' }]} />
             <div className="flex gap-2 justify-end pt-2">
-              <Button variant="secondary" onClick={() => setModal(null)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => { setModal(null); setError(''); }}>Cancel</Button>
               <Button onClick={save}>Save</Button>
             </div>
           </div>

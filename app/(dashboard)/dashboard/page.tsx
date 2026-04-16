@@ -21,7 +21,9 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const [data, setData] = useState<AdminStats | ManagerStats | UserStats | null>(null);
 
-  useEffect(() => { api<AdminStats | ManagerStats | UserStats>('/dashboard').then(setData); }, []);
+  useEffect(() => {
+    api<AdminStats | ManagerStats | UserStats>('/dashboard').then(setData).catch(console.error);
+  }, []);
 
   if (!data) return <div className="p-6 text-gray-400">Loading...</div>;
 

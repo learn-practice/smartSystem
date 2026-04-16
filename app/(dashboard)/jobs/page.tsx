@@ -26,30 +26,46 @@ export default function JobsPage() {
   const [selected, setSelected] = useState<typeof EMPTY & { id?: string }>(EMPTY);
 
   const load = useCallback(async () => {
-    const params = new URLSearchParams({ page: String(page), limit: '10' });
-    if (search) params.set('search', search);
-    if (statusFilter) params.set('status', statusFilter);
-    const data = await api<{ jobs: Job[] }>(`/jobs?${params}`);
-    setJobs(data.jobs);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: '10' });
+      if (search) params.set('search', search);
+      if (statusFilter) params.set('status', statusFilter);
+      const data = await api<{ jobs: Job[] }>(`/jobs?${params}`);
+      setJobs(data.jobs);
+    } catch (err) {
+      console.error(err);
+    }
   }, [page, search, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (user?.role !== 'user') {
-      Promise.all([api<User[]>('/users'), api<Team[]>('/teams')]).then(([u, t]) => { setUsers(u); setTeams(t); });
+      Promise.all([api<User[]>('/users'), api<Team[]>('/teams')])
+        .then(([u, t]) => { setUsers(u); setTeams(t); })
+        .catch(console.error);
     }
   }, [user]);
 
+  const [error, setError] = useState('');
+
   const save = async () => {
-    if (modal === 'create') await api('/jobs', { method: 'POST', body: JSON.stringify(selected) });
-    else await api(`/jobs/${selected.id}`, { method: 'PUT', body: JSON.stringify(selected) });
-    setModal(null); setSelected(EMPTY); load();
+    try {
+      if (modal === 'create') await api('/jobs', { method: 'POST', body: JSON.stringify(selected) });
+      else await api(`/jobs/${selected.id}`, { method: 'PUT', body: JSON.stringify(selected) });
+      setModal(null); setSelected(EMPTY); load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    }
   };
 
   const remove = async (id: string) => {
     if (!confirm('Delete this job?')) return;
-    await api(`/jobs/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      await api(`/jobs/${id}`, { method: 'DELETE' });
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
+    }
   };
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -93,8 +109,9 @@ export default function JobsPage() {
       </div>
 
       {modal && (
-        <Modal title={modal === 'create' ? 'New Job' : 'Edit Job'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'create' ? 'New Job' : 'Edit Job'} onClose={() => { setModal(null); setError(''); }}>
           <div className="space-y-3">
+            {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
             <Input label="Job Title" value={selected.title} onChange={set('title')} required />
             <div className="flex flex-col gap-1">
               <label className="text-sm font-medium text-gray-700">Description</label>
@@ -109,7 +126,7 @@ export default function JobsPage() {
               options={teams.map(t => ({ value: t.id, label: t.name }))} />
             <Input label="Deadline" type="date" value={selected.deadline} onChange={set('deadline')} />
             <div className="flex gap-2 justify-end pt-2">
-              <Button variant="secondary" onClick={() => setModal(null)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => { setModal(null); setError(''); }}>Cancel</Button>
               <Button onClick={save}>Save</Button>
             </div>
           </div>

@@ -22,16 +22,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const refreshToken = localStorage.getItem('refreshToken');
     if (stored && refreshToken) {
       setUser(JSON.parse(stored));
-      // Silently refresh token on mount
       api<{ accessToken: string }>('/auth/refresh', {
         method: 'POST',
         body: JSON.stringify({ refreshToken }),
-      }).then(({ accessToken }) => setAccessToken(accessToken)).catch(() => {
-        localStorage.clear();
-        setUser(null);
-      });
+      })
+        .then(({ accessToken }) => setAccessToken(accessToken))
+        .catch(() => {
+          localStorage.clear();
+          setUser(null);
+        })
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {

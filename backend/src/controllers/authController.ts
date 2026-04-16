@@ -4,29 +4,39 @@ import { pool } from '../config/db';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
-  const { name, email, password, role = 'user' } = req.body;
-  const hashed = await bcrypt.hash(password, 12);
-  const { rows } = await pool.query(
-    `INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4)
-     RETURNING id, name, email, role`,
-    [name, email, hashed, role]
-  );
-  res.status(201).json({ user: rows[0] });
+  try {
+    const { name, email, password, role = 'user' } = req.body;
+    const existing = await pool.query('SELECT id FROM users WHERE email=$1', [email]);
+    if (existing.rows[0]) { res.status(409).json({ message: 'Email already in use' }); return; }
+    const hashed = await bcrypt.hash(password, 12);
+    const { rows } = await pool.query(
+      `INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4)
+       RETURNING id, name, email, role`,
+      [name, email, hashed, role]
+    );
+    res.status(201).json({ user: rows[0] });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : 'Server error' });
+  }
 };
 
 export const login = async (req: Request, res: Response): Promise<void> => {
-  const { email, password } = req.body;
-  const { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
-  const user = rows[0];
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    res.status(401).json({ message: 'Invalid credentials' });
-    return;
+  try {
+    const { email, password } = req.body;
+    const { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [email]);
+    const user = rows[0];
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      res.status(401).json({ message: 'Invalid credentials' });
+      return;
+    }
+    const payload = { id: user.id, role: user.role, email: user.email };
+    const accessToken = signAccessToken(payload);
+    const refreshToken = signRefreshToken(payload);
+    await pool.query('UPDATE users SET refresh_token=$1 WHERE id=$2', [refreshToken, user.id]);
+    res.json({ accessToken, refreshToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : 'Server error' });
   }
-  const payload = { id: user.id, role: user.role, email: user.email };
-  const accessToken = signAccessToken(payload);
-  const refreshToken = signRefreshToken(payload);
-  await pool.query('UPDATE users SET refresh_token=$1 WHERE id=$2', [refreshToken, user.id]);
-  res.json({ accessToken, refreshToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
 };
 
 export const refresh = async (req: Request, res: Response): Promise<void> => {
@@ -44,9 +54,13 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
 };
 
 export const logout = async (req: Request, res: Response): Promise<void> => {
-  const { refreshToken } = req.body;
-  if (refreshToken) {
-    await pool.query('UPDATE users SET refresh_token=NULL WHERE refresh_token=$1', [refreshToken]);
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      await pool.query('UPDATE users SET refresh_token=NULL WHERE refresh_token=$1', [refreshToken]);
+    }
+    res.json({ message: 'Logged out' });
+  } catch (err) {
+    res.status(500).json({ message: err instanceof Error ? err.message : 'Server error' });
   }
-  res.json({ message: 'Logged out' });
 };
